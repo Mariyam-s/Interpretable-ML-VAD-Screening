@@ -1,0 +1,34 @@
+import pandas as pd
+import numpy as np
+import pickle
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
+
+df = pd.read_csv('vitamin_a_data.csv')
+print(f"Dataset loaded: {len(df)} rows")
+
+FEATURES = ['age', 'gender', 'bmi', 'veg_intake', 'fruit_intake',
+            'dairy', 'eggs', 'fish_meat', 'night_blindness',
+            'eye_dryness', 'recent_infection', 'healthcare_access',
+            'clean_water', 'sanitation']
+
+X = df[FEATURES]
+y = df['deficiency_level']
+
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+
+model = RandomForestClassifier(n_estimators=100, max_depth=10, random_state=42, n_jobs=-1)
+model.fit(X_train, y_train)
+
+y_pred = model.predict(X_test)
+accuracy = accuracy_score(y_test, y_pred)
+
+print(f"\nAccuracy: {accuracy:.4f} ({round(accuracy*100, 2)}%)")
+print("\nClassification Report:")
+print(classification_report(y_test, y_pred, target_names=['No Deficiency', 'At Risk', 'Deficient']))
+
+with open('rf_model.pkl', 'wb') as f:
+    pickle.dump(model, f)
+
+print("\nModel saved as rf_model.pkl")
