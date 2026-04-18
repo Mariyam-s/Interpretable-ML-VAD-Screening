@@ -1,0 +1,282 @@
+# pip install pandas numpy scikit-learn flask mysql-connector-python
+from flask import Flask, render_template, request, redirect, session, jsonify
+import mysql.connector
+import pickle
+import numpy as np
+import os
+import io
+
+app = Flask(__name__)
+app.secret_key = '225113337'
+
+FEATURES = ['age', 'gender', 'bmi', 'veg_intake', 'fruit_intake',
+            'dairy', 'eggs', 'fish_meat', 'night_blindness',
+            'eye_dryness', 'recent_infection', 'healthcare_access',
+            'clean_water', 'sanitation']
+
+model = None
+if os.path.exists('rf_model.pkl'):
+    with open('rf_model.pkl', 'rb') as f:
+        model = pickle.load(f)
+    print("Model loaded.")
+else:
+    print("Model not found. Please run train.py first.")
+
+
+def get_db():
+    return mysql.connector.connect(
+        host="localhost", user="root", password="",
+        database="vitamin_a_deficiency", charset="utf8"
+    )
+
+
+def get_recommendations(level, inputs):
+    recs = []
+
+    if inputs['veg_intake'] < 4:
+        recs.append({"type": "diet", "message": "Increase green leafy vegetables (spinach, carrots, sweet potato) to at least 4 days/week."})
+    if inputs['fruit_intake'] < 3:
+        recs.append({"type": "diet", "message": "Add Vitamin A-rich fruits like mango, papaya, and apricots to your daily diet."})
+    if inputs['dairy'] < 3:
+        recs.append({"type": "diet", "message": "Include dairy products (milk, yogurt) at least 3 days/week for Vitamin A."})
+    if inputs['eggs'] < 2:
+        recs.append({"type": "diet", "message": "Eggs are a good source of Vitamin A — try to include them 2–3 times a week."})
+    if inputs['fish_meat'] < 2:
+        recs.append({"type": "diet", "message": "Fish (especially liver) and lean meats are rich in retinol. Include at least twice a week."})
+    if inputs['night_blindness'] == 1:
+        recs.append({"type": "clinical", "message": "Night blindness is an early sign of Vitamin A deficiency. Consult a doctor immediately."})
+    if inputs['eye_dryness'] == 1:
+        recs.append({"type": "clinical", "message": "Eye dryness (xerophthalmia) indicates low Vitamin A. Seek medical attention."})
+    if inputs['recent_infection'] == 1:
+        recs.append({"type": "clinical", "message": "Recent infections increase Vitamin A demand. Consider supplementation after consulting a doctor."})
+    if inputs['healthcare_access'] == 0:
+        recs.append({"type": "access", "message": "Poor healthcare access increases deficiency risk. Visit a community health center."})
+    if inputs['clean_water'] == 0:
+        recs.append({"type": "sanitation", "message": "Lack of clean water increases infection risk which depletes Vitamin A. Seek clean water sources."})
+    if inputs['sanitation'] == 0:
+        recs.append({"type": "sanitation", "message": "Poor sanitation leads to gut infections reducing Vitamin A absorption. Improve hygiene practices."})
+    if inputs['bmi'] < 18.5:
+        recs.append({"type": "nutrition", "message": "Low BMI indicates overall nutritional deficiency. Work on a balanced calorie-dense diet."})
+
+    if level == 0 and not recs:
+        recs.append({"type": "ok", "message": "Your nutritional status looks good. Maintain a balanced diet rich in colorful vegetables and fruits."})
+
+    return recs
+
+
+def predict(inputs):
+    feat = np.array([[
+        inputs['age'], inputs['gender'], inputs['bmi'],
+        inputs['veg_intake'], inputs['fruit_intake'], inputs['dairy'],
+        inputs['eggs'], inputs['fish_meat'], inputs['night_blindness'],
+        inputs['eye_dryness'], inputs['recent_infection'],
+        inputs['healthcare_access'], inputs['clean_water'], inputs['sanitation']
+    ]])
+    level = int(model.predict(feat)[0])
+    proba = model.predict_proba(feat)[0]
+
+    labels = {0: "No Deficiency", 1: "At Risk", 2: "Deficient"}
+    statuses = {0: "healthy", 1: "warning", 2: "critical"}
+
+    label = labels[level]
+    status = statuses[level]
+    confidence = round(float(proba[level]) * 100, 1)
+    recs = get_recommendations(level, inputs)
+    return level, label, status, confidence, recs
+
+
+@app.route('/upload-train', methods=['POST'])
+def upload_train():
+    if 'admin' not in session:
+        return jsonify({'success': False, 'error': 'Unauthorized'}), 403
+    if 'csv_file' not in request.files:
+        return jsonify({'success': False, 'error': 'No file uploaded.'})
+    file = request.files['csv_file']
+    if not file.filename.endswith('.csv'):
+        return jsonify({'success': False, 'error': 'Only .csv files allowed.'})
+    try:
+        import pandas as pd
+        from sklearn.ensemble import RandomForestClassifier
+        from sklearn.model_selection import train_test_split
+        from sklearn.metrics import accuracy_score
+
+        content = file.read().decode('utf-8')
+        df = pd.read_csv(io.StringIO(content))
+
+        required_cols = set(FEATURES + ['deficiency_level'])
+        missing = required_cols - set(df.columns)
+        if missing:
+            return jsonify({'success': False, 'error': f'Missing columns: {", ".join(missing)}'})
+
+        X = df[FEATURES]
+        y = df['deficiency_level']
+        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+
+        rf = RandomForestClassifier(n_estimators=100, max_depth=10, random_state=42, n_jobs=-1)
+        rf.fit(X_train, y_train)
+
+        acc = round(accuracy_score(y_test, rf.predict(X_test)) * 100, 2)
+
+        with open('rf_model.pkl', 'wb') as f:
+            pickle.dump(rf, f)
+
+        global model
+        model = rf
+
+        return jsonify({'success': True, 'rows': len(df), 'accuracy': acc})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)})
+
+
+@app.route('/')
+def index():
+    return render_template('index.html')
+
+
+@app.route('/register', methods=['GET', 'POST'])
+def register():
+    if request.method == 'POST':
+        name = request.form['name']
+        username = request.form['username']
+        password = request.form['password']
+        confirm = request.form['confirm_password']
+        if password != confirm:
+            return render_template('register.html', error="Passwords do not match.")
+        db = get_db()
+        cur = db.cursor()
+        cur.execute("SELECT id FROM users WHERE username = %s", (username,))
+        if cur.fetchone():
+            db.close()
+            return render_template('register.html', error="Username already taken.")
+        cur.execute("INSERT INTO users (name, username, password) VALUES (%s, %s, %s)", (name, username, password))
+        db.commit()
+        db.close()
+        return redirect('/user-login')
+    return render_template('register.html')
+
+
+@app.route('/user-login', methods=['GET', 'POST'])
+def user_login():
+    if request.method == 'POST':
+        username = request.form['username']
+        password = request.form['password']
+        db = get_db()
+        cur = db.cursor(dictionary=True)
+        cur.execute("SELECT * FROM users WHERE username = %s AND password = %s", (username, password))
+        user = cur.fetchone()
+        db.close()
+        if user:
+            session['user_id'] = user['id']
+            session['username'] = user['username']
+            return redirect('/user-dashboard')
+        return render_template('user_login.html', error="Invalid credentials.")
+    return render_template('user_login.html')
+
+
+@app.route('/user-dashboard', methods=['GET', 'POST'])
+def user_dashboard():
+    if 'user_id' not in session:
+        return redirect('/user-login')
+    prediction = None
+    if request.method == 'POST':
+        try:
+            inputs = {
+                'age': int(request.form['age']),
+                'gender': int(request.form['gender']),
+                'bmi': float(request.form['bmi']),
+                'veg_intake': int(request.form['veg_intake']),
+                'fruit_intake': int(request.form['fruit_intake']),
+                'dairy': int(request.form['dairy']),
+                'eggs': int(request.form['eggs']),
+                'fish_meat': int(request.form['fish_meat']),
+                'night_blindness': int(request.form['night_blindness']),
+                'eye_dryness': int(request.form['eye_dryness']),
+                'recent_infection': int(request.form['recent_infection']),
+                'healthcare_access': int(request.form['healthcare_access']),
+                'clean_water': int(request.form['clean_water']),
+                'sanitation': int(request.form['sanitation']),
+            }
+        except (ValueError, KeyError):
+            return render_template('user_dashboard.html', username=session['username'], error="Please fill all fields correctly.")
+
+        level, label, status, confidence, recs = predict(inputs)
+
+        db = get_db()
+        cur = db.cursor()
+        cur.execute("""INSERT INTO predictions
+            (user_id, age, gender, bmi, veg_intake, fruit_intake, dairy, eggs, fish_meat,
+             night_blindness, eye_dryness, recent_infection, healthcare_access, clean_water,
+             sanitation, result, deficiency_level)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+            (session['user_id'], inputs['age'], inputs['gender'], inputs['bmi'],
+             inputs['veg_intake'], inputs['fruit_intake'], inputs['dairy'], inputs['eggs'],
+             inputs['fish_meat'], inputs['night_blindness'], inputs['eye_dryness'],
+             inputs['recent_infection'], inputs['healthcare_access'], inputs['clean_water'],
+             inputs['sanitation'], label, level))
+        db.commit()
+        db.close()
+
+        prediction = {**inputs, "level": level, "label": label, "status": status,
+                      "confidence": confidence, "recommendations": recs}
+
+    return render_template('user_dashboard.html', username=session['username'], prediction=prediction)
+
+
+@app.route('/history')
+def history():
+    if 'user_id' not in session:
+        return redirect('/user-login')
+    db = get_db()
+    cur = db.cursor(dictionary=True)
+    cur.execute("SELECT * FROM predictions WHERE user_id = %s ORDER BY created_at DESC", (session['user_id'],))
+    rows = cur.fetchall()
+    db.close()
+    return render_template('history.html', username=session['username'], rows=rows)
+
+
+@app.route('/admin-login', methods=['GET', 'POST'])
+def admin_login():
+    if request.method == 'POST':
+        username = request.form['username']
+        password = request.form['password']
+        db = get_db()
+        cur = db.cursor(dictionary=True)
+        cur.execute("SELECT * FROM admins WHERE username = %s AND password = %s", (username, password))
+        admin = cur.fetchone()
+        db.close()
+        if admin:
+            session['admin'] = admin['username']
+            return redirect('/admin-dashboard')
+        return render_template('admin_login.html', error="Invalid admin credentials.")
+    return render_template('admin_login.html')
+
+
+@app.route('/admin-dashboard')
+def admin_dashboard():
+    if 'admin' not in session:
+        return redirect('/admin-login')
+    db = get_db()
+    cur = db.cursor(dictionary=True)
+    cur.execute("SELECT COUNT(*) AS total FROM users")
+    total_users = cur.fetchone()['total']
+    cur.execute("""SELECT u.id, u.name, u.username, u.created_at, p.result AS last_prediction
+                   FROM users u LEFT JOIN predictions p ON p.id = (
+                       SELECT id FROM predictions WHERE user_id = u.id ORDER BY created_at DESC LIMIT 1
+                   ) ORDER BY u.created_at DESC""")
+    users = cur.fetchall()
+    cur.execute("""SELECT DATE_FORMAT(created_at, '%b') AS month, COUNT(*) AS cnt
+                   FROM predictions GROUP BY month ORDER BY MIN(created_at)""")
+    activity = cur.fetchall()
+    db.close()
+    return render_template('admin_dashboard.html', admin=session['admin'],
+                           total_users=total_users, users=users, activity=activity)
+
+
+@app.route('/logout')
+def logout():
+    session.clear()
+    return redirect('/')
+
+
+if __name__ == '__main__':
+    app.run(debug=True)
