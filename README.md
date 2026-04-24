@@ -16,7 +16,7 @@
  **Database:** MySQL (WampServer)
 
 # VitaAssist Dashboard
-Dashboard.png
+web.pdf
 
 # System Architecture
 The system follows a modular architecture:
@@ -26,8 +26,12 @@ The system follows a modular architecture:
 4. **UI Dashboard:** Results and dietary recommendations are displayed via a Bootstrap interface.
 
 # Results
+
 Predictive Performance: The Random Forest model successfully categorizes risk levels, providing a reliable risk probability score for early screening.  
-​Diagnostic Efficiency: The system prioritizes significant clinical attributes, reducing the need for exhaustive data entry and computational overhead.  
-​Visual Interpretability: SHAP reasoning effectively identifies specific ocular and demographic triggers, generating bar graphs to explain "High Risk" flags to health workers.  
-​System Reliability: The Flask-based deployment ensures high-speed processing and model stability while maintaining data security via MySQL.  
-​Clinical Impact: By replacing invasive blood tests with non-invasive clinical records, the tool minimizes human error and significantly saves time during mass screenings.  
+**​Diagnostic Efficiency:** The system prioritizes significant clinical attributes, reducing the need for exhaustive data entry and computational overhead.  
+
+**​Visual Interpretability:** SHAP reasoning effectively identifies specific ocular and demographic triggers, generating bar graphs to explain "High Risk" flags to health workers.  
+
+**​System Reliability:** The Flask-based deployment ensures high-speed processing and model stability while maintaining data security via MySQL.
+
+**​Clinical Impact:** By replacing invasive blood tests with non-invasive clinical records, the tool minimizes human error and significantly saves time during mass screenings.  
