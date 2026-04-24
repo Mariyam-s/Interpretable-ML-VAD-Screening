@@ -31,7 +31,7 @@ The system follows a modular architecture:
 
 # Results
 
-Predictive Performance: The Random Forest model successfully categorizes risk levels, providing a reliable risk probability score for early screening.  
+**Predictive Performance:** The Random Forest model successfully categorizes risk levels, providing a reliable risk probability score for early screening.  
 **​Diagnostic Efficiency:** The system prioritizes significant clinical attributes, reducing the need for exhaustive data entry and computational overhead.  
 
 **​Visual Interpretability:** SHAP reasoning effectively identifies specific ocular and demographic triggers, generating bar graphs to explain "High Risk" flags to health workers.  
