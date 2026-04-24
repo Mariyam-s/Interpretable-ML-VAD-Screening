@@ -10,9 +10,13 @@
 
 # Tech Stack
  **Language:** Python 3.7.4+
- **Machine Learning:** Random Forest Classifier, SHAP Library
+
+**Machine Learning:** Random Forest Classifier, SHAP Library
+
  **Backend:** Flask
+ 
  **Frontend:** HTML5, CSS3, Bootstrap
+
  **Database:** MySQL (WampServer)
 
 # VitaAssist Dashboard
